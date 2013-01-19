@@ -45,7 +45,7 @@ class LdapManagerUser implements LdapManagerUserInterface
 
     public function getEmail()
     {
-        return $this->_ldapUser['mail'][0];
+        return isset($this->_ldapUser['mail'][0]) ? $this->_ldapUser['mail'][0] : '';
     }
 
     public function getAttributes()
@@ -104,7 +104,7 @@ class LdapManagerUser implements LdapManagerUserInterface
                                     $filter,
                                     $this->params['user']['name_attribute'],
                                     $this->ldapConnection->escape($this->username)
-                                  )
+                )
             ));
 
         if ($entries['count'] > 1) {
@@ -165,7 +165,7 @@ class LdapManagerUser implements LdapManagerUserInterface
     private function bind()
     {
         return $this->ldapConnection
-                    ->bind($this->_ldapUser['dn'], $this->password);
+            ->bind($this->_ldapUser['dn'], $this->password);
     }
 
     private static function slugify($role)

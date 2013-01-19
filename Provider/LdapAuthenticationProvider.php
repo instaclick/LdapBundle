@@ -10,17 +10,23 @@ use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\Exception\UsernameNotFoundException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use IMAG\LdapBundle\Authentication\Token\LdapToken;
 use IMAG\LdapBundle\Manager\LdapManagerUserInterface;
+use IMAG\LdapBundle\Event\LdapUserEvent;
+use IMAG\LdapBundle\Event\LdapEvents;
+use IMAG\LdapBundle\User\LdapUser;
 
 class LdapAuthenticationProvider implements AuthenticationProviderInterface
 {
     private
         $userProvider,
         $ldapManager,
+        $dispatcher,
         $providerKey,
-        $hideUserNotFoundExceptions;
+        $hideUserNotFoundExceptions
+        ;
 
     /**
      * Constructor
@@ -36,13 +42,16 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
     public function __construct(
         UserProviderInterface $userProvider,
         LdapManagerUserInterface $ldapManager,
+        EventDispatcherInterface $dispatcher = null,
         $providerKey,
         $hideUserNotFoundExceptions = true
     )
     {
         $this->userProvider = $userProvider;
         $this->ldapManager = $ldapManager;
+        $this->dispatcher = $dispatcher;
         $this->providerKey = $providerKey;
+        $this->hideUserNotFoundExceptions = $hideUserNotFoundExceptions;
     }
 
     /**
@@ -54,13 +63,9 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
             throw new AuthenticationException('Unsupported token');
         }
 
-        if ($token->getProviderKey() !== $this->providerKey) {
-            throw new AuthenticationException('Incorrect provider key');
-        }
-
         try {
             $user = $this->userProvider
-                         ->loadUserByUsername($token->getUsername());
+                ->loadUserByUsername($token->getUsername());
         } catch (UsernameNotFoundException $userNotFoundException) {
             if (!$this->hideUserNotFoundExceptions) {
                 throw new BadCredentialsException('Bad credentials', 0, $userNotFoundException);
@@ -69,8 +74,21 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
             throw $userNotFoundException;
         }
 
+        if (null !== $this->dispatcher && $user instanceof LdapUser) {
+            $userEvent = new LdapUserEvent($user);
+            try {
+                $this->dispatcher->dispatch(LdapEvents::PRE_BIND, $userEvent);
+            } catch(\Exception $expt) {
+                if (!$this->hideUserNotFoundExceptions) {
+                    throw new BadCredentialsException('Bad credentials', 0, $expt);
+                }
+
+                throw $expt;
+            }
+        }
+
         if ($this->bind($user, $token)) {
-            $ldapToken = new LdapToken($user, '', $user->getRoles());
+            $ldapToken = new LdapToken($user, '', $this->providerKey, $user->getRoles());
             $ldapToken->setAuthenticated(true);
             $ldapToken->setAttributes($token->getAttributes());
 
@@ -106,8 +124,9 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function supports(TokenInterface $token)
     {
-        return $token instanceof LdapToken
-            || $token instanceof UsernamePasswordToken;
+        return ( $token instanceof LdapToken
+                 || $token instanceof UsernamePasswordToken ) 
+            && $token->getProviderKey() === $this->providerKey;
     }
 
 }

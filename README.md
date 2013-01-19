@@ -15,38 +15,23 @@ You can try to contact me on freenode irc ; channel #symfony-fr ; pseudo : aways
 6. Import LdapBundle security.yml
 7. Import LdapBundle routing
 8. Implement Logout
+9. Subscribe to PRE_BIND event
 
 ### Get the Bundle
 
-#### Method a) Using the `deps` file
-
-Add the following lines to your  `deps` file and then run `php bin/vendors
-install`:
-
-```
-[LdapBundle]
-    git=https://github.com/BorisMorel/LdapBundle.git
-    target=bundles/IMAG/LdapBundle
-```
-
-#### Method b) Using submodules
-
-Run the following commands to bring in the needed libraries as submodules.
-
-``` bash
-$ git clone git://github.com/BorisMorel/LdapBundle.git vendor/bundles/IMAG/LdapBundle
-```
-
-### Configure the Autoloader
+### Composer
+Modify your composer.json on your project root
 
 ``` php
-<?php
-// app/autoload.php
+// {root}/composer.json
 
-$loader->registerNamespaces(array(
-     // ...
-    'IMAG' => __DIR__.'/../vendor/bundles',
-));
+{
+    [...],
+    "require": {
+        [...],
+        "imag/ldap-bundle": "dev-master"
+    }
+}
 ```
 
 ### Enable the Bundle
@@ -93,10 +78,6 @@ security:
   access_control:
     - { path: ^/login,          roles: IS_AUTHENTICATED_ANONYMOUSLY }
     - { path: ^/,               roles: IS_AUTHENTICATED_FULLY }
-
-  # obsolete in SF 2.1
-  factories:
-    - "%kernel.root_dir%/../vendor/bundles/IMAG/LdapBundle/Resources/config/security_factories.xml"
 
 imag_ldap:
   client:
@@ -162,3 +143,33 @@ Just create a link with logout target.
 **Note:**
 You can refer to the official Symfony documentation :
 http://symfony.com/doc/2.0/book/security.html#logging-out
+
+### Subscribe to PRE_BIND event
+
+Now you can perform you own logic before the user is authenticated on Ldap.
+If you want to break the authentication just return an Exception.
+
+To subscribe:
+``` xml
+<tag name="kernel.event_listener" event="imag_ldap.security.authentication.pre_bind" method="onPreBind" />
+```
+
+Exemple:
+``` php
+<?php
+use IMAG\LdapBundle\Event\LdapUserEvent,
+
+public function onPreBind(LdapUserEvent $event)
+{
+    $user = $event->getUser();
+    $config = $this->appContext->getConfig();
+
+    $ldapConf = $config['ldap'];
+
+    if (!in_array($user->getUsername(), $ldapConf['allowed'])) {
+        throw new \Exception('Not allowed ldap user');
+    }
+
+    $user->addRole('ROLE_LDAP');
+}
+```
